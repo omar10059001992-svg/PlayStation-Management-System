@@ -2,7 +2,7 @@
 package gaming;
 
 
-
+// This class handles the scheduling and booking of PlayStation consoles
 public class Reservation {
     private int idReservation;
     private int itemId;
