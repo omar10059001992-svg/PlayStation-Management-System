@@ -60,6 +60,9 @@ public class SquadGameSystem extends JFrame {
     private JTextField txtMaintDate = new JTextField(12);
     private JButton btnAddMaintenance = new JButton("➕ إضافة تقرير");
     private JButton btnDeleteMaintenance = new JButton("❌ حذف تقرير");
+    // 🌟 العناصر الجديدة الخاصة بالطباعة والمجموع
+    private JButton btnPrintMaintenance = new JButton("🖨️ طباعة التقرير");
+    private JLabel lblTotalMaintenanceCost = new JLabel("الإجمالي: 0.0 د.ل");
 
     // واجهة الحسابات والصلاحيات
     private DefaultTableModel usersModel;
@@ -88,10 +91,9 @@ public class SquadGameSystem extends JFrame {
         try {
             conn = DriverManager.getConnection("jdbc:mysql://localhost:3306/squad_game_db", "root", "");
         } catch (SQLException e) {
-            System.out.println("نمط المحاكاة النشط قيد العمل حالياً.");
+            System.out.println("تنبيه: لا يوجد اتصال بقاعدة البيانات. (البرنامج يعمل بدون قاعدة)");
         }
 
-        // قفل التعديل المباشر على خلايا جدول المستخدمين
         usersModel = new DefaultTableModel(new String[]{"ID المستخدم", "اسم المستخدم", "كلمة المرور", "الصلاحية الحالية"}, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
@@ -294,23 +296,71 @@ public class SquadGameSystem extends JFrame {
         panel.add(Box.createVerticalStrut(15));
     }
 
+    // 🌟 دالة مخصصة لحساب الإجمالي للتقارير
+    private void updateMaintenanceTotal() {
+        double total = 0.0;
+        for (int i = 0; i < maintenanceModel.getRowCount(); i++) {
+            try {
+                total += Double.parseDouble(maintenanceModel.getValueAt(i, 2).toString());
+            } catch (Exception ignored) {}
+        }
+        lblTotalMaintenanceCost.setText("الإجمالي: " + total + " د.ل");
+    }
+
     private void loadItemsFromDatabase() {
         itemsModel.setRowCount(0);
-        itemsModel.addRow(new Object[]{1, "plystation 5", "sony", 15.0, "Available"});
-        itemsModel.addRow(new Object[]{2, "xbox siries", "xbox", 10.0, "Available"});
-        itemsModel.addRow(new Object[]{3, "xbox 1s", "xbox", 10.0, "Available"});
-        itemsModel.addRow(new Object[]{4, "plystation 4", "sony", 5.0, "Available"});
+        if (conn == null) return;
+
+        try {
+            String sql = "SELECT * FROM items_table";
+            Statement stmt = conn.createStatement();
+            ResultSet rs = stmt.executeQuery(sql);
+
+            while (rs.next()) {
+                int id = rs.getInt("id_item");
+                String name = rs.getString("name");
+                String type = rs.getString("type");
+                double rate = rs.getDouble("hourly_rate");
+                String status = rs.getString("status");
+
+                itemsModel.addRow(new Object[]{id, name, type, rate, status});
+            }
+        } catch (SQLException e) {
+            System.out.println("حدث خطأ أثناء جلب الأجهزة من قاعدة البيانات: " + e.getMessage());
+        }
     }
 
     private void loadMaintenanceFromDatabase() {
         maintenanceModel.setRowCount(0);
         maintenanceModel.addRow(new Object[]{1, "جهاز 1", 150.0, "تغيير مروحة التبريد", "2026-06-10"});
+        updateMaintenanceTotal(); // 🌟 تحديث المجموع عند التحميل
     }
 
     private void loadUsersFromDatabase() {
         usersModel.setRowCount(0);
-        usersModel.addRow(new Object[]{1, "admin", "123", "Admin"});
-        usersModel.addRow(new Object[]{2, "omar", "1234", "Employee"});
+        if (conn == null) {
+            usersModel.addRow(new Object[]{1, "admin", "123", "Admin"});
+            usersModel.addRow(new Object[]{2, "omar", "1234", "Employee"});
+            return;
+        }
+
+        try {
+            String sql = "SELECT * FROM user_table";
+            Statement stmt = conn.createStatement();
+            ResultSet rs = stmt.executeQuery(sql);
+
+            while (rs.next()) {
+                int id = rs.getInt("id");
+                String username = rs.getString("username");
+                String password = rs.getString("password");
+                String role = rs.getString("role");
+
+                usersModel.addRow(new Object[]{id, username, password, role});
+            }
+        } catch (SQLException e) {
+            usersModel.addRow(new Object[]{1, "admin", "123", "Admin"});
+            usersModel.addRow(new Object[]{2, "omar", "1234", "Employee"});
+        }
     }
 
     private void initDashboardScreen() {
@@ -324,11 +374,12 @@ public class SquadGameSystem extends JFrame {
         styleButton(btnEndRes, new Color(239, 68, 68));
         styleButton(btnAddMaintenance, new Color(16, 185, 129));
         styleButton(btnDeleteMaintenance, new Color(239, 68, 68));
+        styleButton(btnPrintMaintenance, new Color(59, 130, 246)); // 🌟 زر الطباعة باللون الأزرق
         styleButton(btnAddUser, new Color(16, 185, 129));
         styleButton(btnUpdateUserPrivilege, new Color(59, 130, 246));
         styleButton(btnDeleteUser, new Color(239, 68, 68));
 
-        // واجهة إدارة الأجهزة وقفل خلايا الجدول الخاص بها
+        // واجهة إدارة الأجهزة
         itemsPanel.setBackground(bgBlue);
         itemsModel = new DefaultTableModel(new String[]{"ID الجهاز", "اسم الجهاز", "النوع", "سعر الساعة", "الحالة"}, 0) {
             @Override
@@ -354,7 +405,7 @@ public class SquadGameSystem extends JFrame {
         addSidebarComponent(itemsSidebar, btnDeleteItem, null);
         itemsPanel.add(itemsSidebar, BorderLayout.EAST);
 
-        // واجهة الحجوزات وقفل خلايا الجدول الخاص بها
+        // واجهة الحجوزات
         resPanel.setBackground(bgBlue);
         resModel = new DefaultTableModel(new String[]{"رقم الحجز", "رقم الجهاز", "اسم الجهاز المربوط", "وقت البدء الفعلي", "المدة المطلوبة", "سعر الساعة", "الإجمالي المؤقت (د.ل)"}, 0) {
             @Override
@@ -378,7 +429,7 @@ public class SquadGameSystem extends JFrame {
         addSidebarComponent(resSidebar, btnEndRes, null);
         resPanel.add(resSidebar, BorderLayout.EAST);
 
-        // واجهة الصيانة وقفل خلايا الجدول الخاص بها
+        // واجهة الصيانة
         maintenancePanel.setBackground(bgBlue);
         maintenanceModel = new DefaultTableModel(new String[]{"ID السجل", "جهاز / مادة الصيانة", "التكلفة (د.ل)", "وصف عملية الإصلاح والعطل", "تاريخ السجل"}, 0) {
             @Override
@@ -401,8 +452,18 @@ public class SquadGameSystem extends JFrame {
         addSidebarField(maintSidebar, "التاريخ:", txtMaintDate);
         txtMaintDate.setText("2026-06-25");
 
+        // 🌟 تنسيق نص المجموع المالي
+        lblTotalMaintenanceCost.setFont(new Font("Arial", Font.BOLD, 18));
+        lblTotalMaintenanceCost.setForeground(new Color(16, 185, 129)); // لون أخضر نيون يتماشى مع الستايل
+        lblTotalMaintenanceCost.setAlignmentX(Component.RIGHT_ALIGNMENT);
+
         addSidebarComponent(maintSidebar, btnAddMaintenance, null);
         addSidebarComponent(maintSidebar, btnDeleteMaintenance, null);
+        addSidebarComponent(maintSidebar, btnPrintMaintenance, null); // 🌟 إضافة زر الطباعة
+
+        maintSidebar.add(Box.createVerticalStrut(20)); // مسافة فارغة
+        maintSidebar.add(lblTotalMaintenanceCost);     // 🌟 إضافة نص المجموع أسفل الأزرار
+
         maintenancePanel.add(maintSidebar, BorderLayout.EAST);
 
         // واجهة الحسابات
@@ -428,7 +489,6 @@ public class SquadGameSystem extends JFrame {
         addSidebarComponent(usersSidebar, btnDeleteUser, null);
         usersPanel.add(usersSidebar, BorderLayout.EAST);
 
-        // الحدث عند اختيار عنصر من جدول الأجهزة لتعبئة الحقول تلقائياً
         tblItems.getSelectionModel().addListSelectionListener(e -> {
             int row = tblItems.getSelectedRow();
             if (row != -1) {
@@ -438,7 +498,6 @@ public class SquadGameSystem extends JFrame {
             }
         });
 
-        // الحدث عند اختيار حساب من جدول الحسابات لتعبئة الحقول تلقائياً
         tblUsers.getSelectionModel().addListSelectionListener(e -> {
             int row = tblUsers.getSelectedRow();
             if (row != -1) {
@@ -448,7 +507,6 @@ public class SquadGameSystem extends JFrame {
             }
         });
 
-        // حدث إضافة حساب جديد
         btnAddUser.addActionListener(e -> {
             String username = txtManageUser.getText().trim();
             String password = txtManagePass.getText().trim();
@@ -459,43 +517,126 @@ public class SquadGameSystem extends JFrame {
                 return;
             }
 
-            int nextUserId = usersModel.getRowCount() + 1;
-            usersModel.addRow(new Object[]{nextUserId, username, password, role});
-            txtManageUser.setText(""); txtManagePass.setText("");
+            try {
+                if (conn != null) {
+                    String sql = "INSERT INTO user_table (username, password, role) VALUES (?, ?, ?)";
+                    PreparedStatement stmt = conn.prepareStatement(sql);
+                    stmt.setString(1, username);
+                    stmt.setString(2, password);
+                    stmt.setString(3, role);
+                    stmt.executeUpdate();
+                    loadUsersFromDatabase();
+                } else {
+                    int nextUserId = usersModel.getRowCount() + 1;
+                    usersModel.addRow(new Object[]{nextUserId, username, password, role});
+                }
+
+                txtManageUser.setText(""); txtManagePass.setText("");
+                JOptionPane.showMessageDialog(this, "تم إضافة الحساب بنجاح! ✅", "عملية ناجحة", JOptionPane.INFORMATION_MESSAGE);
+            } catch (SQLException ex) {
+                JOptionPane.showMessageDialog(this, "خطأ أثناء الحفظ في قاعدة البيانات: " + ex.getMessage(), "خطأ", JOptionPane.ERROR_MESSAGE);
+            }
         });
 
-        // حدث تعديل صلاحيات حساب مستخدم
         btnUpdateUserPrivilege.addActionListener(e -> {
             int selectedRow = tblUsers.getSelectedRow();
-            if (selectedRow == -1) return;
-            tblUsers.setValueAt(txtManageUser.getText().trim(), selectedRow, 1);
-            tblUsers.setValueAt(txtManagePass.getText().trim(), selectedRow, 2);
-            tblUsers.setValueAt(cmbRole.getSelectedItem().toString(), selectedRow, 3);
+            if (selectedRow == -1) {
+                JOptionPane.showMessageDialog(this, "الرجاء تحديد مستخدم من الجدول أولاً!", "تنبيه", JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+
+            String updatedUser = txtManageUser.getText().trim();
+            String updatedPass = txtManagePass.getText().trim();
+            String updatedRole = cmbRole.getSelectedItem().toString();
+
+            if (updatedUser.isEmpty() || updatedPass.isEmpty()) {
+                JOptionPane.showMessageDialog(this, "الرجاء عدم ترك الخانات فارغة!", "خطأ", JOptionPane.ERROR_MESSAGE);
+                return;
+            }
+
+            int userId = Integer.parseInt(usersModel.getValueAt(selectedRow, 0).toString());
+
+            try {
+                if (conn != null) {
+                    String sql = "UPDATE user_table SET username = ?, password = ?, role = ? WHERE id = ?";
+                    PreparedStatement stmt = conn.prepareStatement(sql);
+                    stmt.setString(1, updatedUser);
+                    stmt.setString(2, updatedPass);
+                    stmt.setString(3, updatedRole);
+                    stmt.setInt(4, userId);
+                    stmt.executeUpdate();
+                    loadUsersFromDatabase();
+                } else {
+                    tblUsers.setValueAt(updatedUser, selectedRow, 1);
+                    tblUsers.setValueAt(updatedPass, selectedRow, 2);
+                    tblUsers.setValueAt(updatedRole, selectedRow, 3);
+                }
+                JOptionPane.showMessageDialog(this, "تم تعديل بيانات المستخدم بنجاح! ✨", "نجاح العملية", JOptionPane.INFORMATION_MESSAGE);
+            } catch (SQLException ex) {
+                JOptionPane.showMessageDialog(this, "خطأ أثناء التعديل بقاعدة البيانات: " + ex.getMessage(), "خطأ", JOptionPane.ERROR_MESSAGE);
+            }
         });
 
-        // حدث حذف حساب
         btnDeleteUser.addActionListener(e -> {
             int selectedRow = tblUsers.getSelectedRow();
-            if (selectedRow != -1) usersModel.removeRow(selectedRow);
+            if (selectedRow == -1) {
+                JOptionPane.showMessageDialog(this, "الرجاء تحديد مستخدم من الجدول أولاً!");
+                return;
+            }
+
+            int confirm = JOptionPane.showConfirmDialog(this, "هل أنت متأكد من حذف هذا المستخدم نهائياً؟", "تأكيد الحذف", JOptionPane.YES_NO_OPTION);
+            if (confirm != JOptionPane.YES_OPTION) return;
+
+            int userId = Integer.parseInt(usersModel.getValueAt(selectedRow, 0).toString());
+
+            try {
+                if (conn != null) {
+                    String sql = "DELETE FROM user_table WHERE id = ?";
+                    PreparedStatement stmt = conn.prepareStatement(sql);
+                    stmt.setInt(1, userId);
+                    stmt.executeUpdate();
+                    loadUsersFromDatabase();
+                } else {
+                    usersModel.removeRow(selectedRow);
+                }
+                txtManageUser.setText(""); txtManagePass.setText("");
+                JOptionPane.showMessageDialog(this, "تم حذف المستخدم بنجاح! ✅");
+            } catch (SQLException ex) {
+                JOptionPane.showMessageDialog(this, "خطأ في قاعدة البيانات: " + ex.getMessage(), "خطأ", JOptionPane.ERROR_MESSAGE);
+            }
         });
 
-        // حدث إضافة جهاز جديد
         btnAddItem.addActionListener(e -> {
             String name = txtItemName.getText().trim();
             String type = txtItemType.getText().trim();
             String rateStr = txtItemRate.getText().trim();
 
-            if (name.isEmpty() || type.isEmpty() || rateStr.isEmpty()) return;
+            if (name.isEmpty() || type.isEmpty() || rateStr.isEmpty()) {
+                JOptionPane.showMessageDialog(this, "الرجاء تعبئة جميع الحقول!");
+                return;
+            }
 
             try {
                 double rate = Double.parseDouble(rateStr);
-                int nextId = itemsModel.getRowCount() + 1;
-                itemsModel.addRow(new Object[]{nextId, name, type, rate, "Available"});
+                if(conn != null) {
+                    String sql = "INSERT INTO items_table (name, type, hourly_rate, status) VALUES (?, ?, ?, 'Available')";
+                    PreparedStatement stmt = conn.prepareStatement(sql);
+                    stmt.setString(1, name);
+                    stmt.setString(2, type);
+                    stmt.setDouble(3, rate);
+                    stmt.executeUpdate();
+                }
+
+                loadItemsFromDatabase();
                 txtItemName.setText(""); txtItemType.setText(""); txtItemRate.setText("");
-            } catch (Exception ex) {}
+                JOptionPane.showMessageDialog(this, "تم إضافة الجهاز بنجاح! ✅");
+            } catch (NumberFormatException ex) {
+                JOptionPane.showMessageDialog(this, "سعر الساعة يجب أن يكون رقماً!");
+            } catch (SQLException ex) {
+                JOptionPane.showMessageDialog(this, "خطأ في قاعدة البيانات: " + ex.getMessage());
+            }
         });
 
-        // 🛠️ حدث تعديل بيانات الجهاز (الكود الجديد والمحمي لمنع التداخل البرمجي)
         btnUpdateItem.addActionListener(e -> {
             int selectedRow = tblItems.getSelectedRow();
             if (selectedRow == -1) {
@@ -503,7 +644,6 @@ public class SquadGameSystem extends JFrame {
                 return;
             }
             try {
-                // 1. تخزين القيم المكتوبة حالياً في متغيرات لحمايتها قبل التحديث
                 String updatedName = txtItemName.getText().trim();
                 String updatedType = txtItemType.getText().trim();
                 String updatedRateStr = txtItemRate.getText().trim();
@@ -514,86 +654,132 @@ public class SquadGameSystem extends JFrame {
                 }
 
                 double updatedRate = Double.parseDouble(updatedRateStr);
-
-                // 2. تحديث الموديل مباشرة بنجاح دون أي تجميد
                 itemsModel.setValueAt(updatedName, selectedRow, 1);
                 itemsModel.setValueAt(updatedType, selectedRow, 2);
                 itemsModel.setValueAt(updatedRate, selectedRow, 3);
 
                 JOptionPane.showMessageDialog(this, "تم تحديث بيانات الجهاز بنجاح! ✨", "نجاح العملية", JOptionPane.INFORMATION_MESSAGE);
-
             } catch (NumberFormatException ex) {
                 JOptionPane.showMessageDialog(this, "الرجاء إدخال رقم صحيح في خانة سعر الساعة!", "خطأ في الإدخال", JOptionPane.ERROR_MESSAGE);
             }
         });
 
-        // حدث حذف جهاز
         btnDeleteItem.addActionListener(e -> {
             int row = tblItems.getSelectedRow();
-            if (row != -1) itemsModel.removeRow(row);
+            if (row == -1) {
+                JOptionPane.showMessageDialog(this, "الرجاء تحديد جهاز من الجدول للحذف!");
+                return;
+            }
+
+            int itemId = Integer.parseInt(itemsModel.getValueAt(row, 0).toString());
+
+            int confirm = JOptionPane.showConfirmDialog(this, "هل أنت متأكد من حذف هذا الجهاز نهائياً؟", "تأكيد", JOptionPane.YES_NO_OPTION);
+            if (confirm != JOptionPane.YES_OPTION) return;
+
+            try {
+                if(conn != null) {
+                    String sql = "DELETE FROM items_table WHERE id_item = ?";
+                    PreparedStatement stmt = conn.prepareStatement(sql);
+                    stmt.setInt(1, itemId);
+                    stmt.executeUpdate();
+                }
+
+                loadItemsFromDatabase();
+                txtItemName.setText(""); txtItemType.setText(""); txtItemRate.setText("");
+                JOptionPane.showMessageDialog(this, "تم الحذف بنجاح! ✅");
+            } catch (SQLException ex) {
+                JOptionPane.showMessageDialog(this, "خطأ في قاعدة البيانات: " + ex.getMessage());
+            }
         });
 
-        // حدث بدء حجز اللعب
         btnStartRes.addActionListener(e -> {
             String devIdStr = txtResDeviceID.getText().trim();
             String durStr = txtResDuration.getText().trim();
-            if(devIdStr.isEmpty() || durStr.isEmpty()) return;
 
+            if (devIdStr.isEmpty() || durStr.isEmpty()) {
+                JOptionPane.showMessageDialog(this, "الرجاء إدخال رقم الجهاز والمدة!");
+                return;
+            }
+
+            // 1. التحقق من وجود حجز مسبق لنفس الجهاز
+            for (int i = 0; i < resModel.getRowCount(); i++) {
+                String existingDeviceId = resModel.getValueAt(i, 1).toString();
+                if (existingDeviceId.equals(devIdStr)) {
+                    JOptionPane.showMessageDialog(this, "خطأ: هذا الجهاز محجوز مسبقاً ولا يمكن حجزه مرة أخرى!", "جهاز محجوز", JOptionPane.ERROR_MESSAGE);
+                    return; // إيقاف العملية ومنع التكرار
+                }
+            }
+
+            // 2. البحث عن تفاصيل الجهاز (الاسم والسعر)
             String targetDeviceName = "جهاز";
             double targetRate = 10.0;
+            boolean found = false;
+
             try {
                 int searchId = Integer.parseInt(devIdStr);
-                for(int i=0; i<itemsModel.getRowCount(); i++) {
-                    if(Integer.parseInt(itemsModel.getValueAt(i, 0).toString()) == searchId) {
+                for (int i = 0; i < itemsModel.getRowCount(); i++) {
+                    if (Integer.parseInt(itemsModel.getValueAt(i, 0).toString()) == searchId) {
                         targetDeviceName = itemsModel.getValueAt(i, 1).toString();
                         targetRate = Double.parseDouble(itemsModel.getValueAt(i, 3).toString());
+                        found = true;
                         break;
                     }
                 }
-            } catch(Exception ex) {}
+            } catch (Exception ex) {
+                JOptionPane.showMessageDialog(this, "رقم الجهاز غير موجود في القائمة!");
+                return;
+            }
 
+            if (!found) {
+                JOptionPane.showMessageDialog(this, "الجهاز غير موجود!");
+                return;
+            }
+
+            // 3. إضافة الحجز إذا كان كل شيء سليم
             try {
                 double hours = Double.parseDouble(durStr);
                 double total = hours * targetRate;
                 LocalTime now = LocalTime.now();
                 String currentTime = String.format("%02d:%02d", now.getHour(), now.getMinute());
                 int nextBookingId = resModel.getRowCount() + 1;
-                resModel.addRow(new Object[]{nextBookingId, devIdStr, targetDeviceName, currentTime, (hours == 0) ? "مفتوح" : hours + " ساعات", targetRate, (hours == 0) ? "جاري اللعب..." : total});
-                txtResDeviceID.setText(""); txtResDuration.setText("");
-            } catch (Exception ex) {}
-        });
 
-        // حدث إنهاء حجز والتشيك
+                // إضافة الصف إلى الجدول
+                resModel.addRow(new Object[]{nextBookingId, devIdStr, targetDeviceName, currentTime, (hours == 0) ? "مفتوح" : hours + " ساعات", targetRate, total});
+
+                // مسح الحقول بعد الإضافة
+                txtResDeviceID.setText("");
+                txtResDuration.setText("");
+
+                JOptionPane.showMessageDialog(this, "تم بدء الحجز بنجاح للجهاز: " + targetDeviceName);
+
+            } catch (NumberFormatException ex) {
+                JOptionPane.showMessageDialog(this, "المدة يجب أن تكون رقماً!");
+            }
+        });
         btnEndRes.addActionListener(e -> {
             int selectedRow = tblRes.getSelectedRow();
             if(selectedRow != -1) resModel.removeRow(selectedRow);
         });
 
-        // 🛠️ [الكود الجديد المضاف]: أحداث واجهة الصيانة والتقارير المالية لتفعيل زر الإضافة والحذف
         btnAddMaintenance.addActionListener(e -> {
             String device = txtMaintDeviceID.getText().trim();
             String costStr = txtMaintCost.getText().trim();
             String desc = txtMaintDesc.getText().trim();
             String date = txtMaintDate.getText().trim();
 
-            // التحقق من الحقول الفارغة
             if (device.isEmpty() || costStr.isEmpty() || desc.isEmpty() || date.isEmpty()) {
                 JOptionPane.showMessageDialog(this, "الرجاء تعبئة جميع خانات التقرير أولاً!", "حقول فارغة", JOptionPane.WARNING_MESSAGE);
                 return;
             }
 
             try {
-                // التحقق من صحة إدخال التكلفة كرقم وحساب الـ ID التالي تلقائياً
                 double cost = Double.parseDouble(costStr);
                 int nextMaintId = maintenanceModel.getRowCount() + 1;
-
-                // في حالة إدخال رقم جهاز مجرد (مثل "1")، يتم صياغته تلقائياً ليطابق مظهر الجدول كـ "جهاز 1"
                 String formattedDevice = device.matches("\\d+") ? "جهاز " + device : device;
-
-                // إضافة السطر الجديد لموديل الجدول لتحديثه في الواجهة فوراً
                 maintenanceModel.addRow(new Object[]{nextMaintId, formattedDevice, cost, desc, date});
 
-                // تفريغ الحقول بعد الإضافة الناجحة وإبقاء التاريخ الافتراضي
+                updateMaintenanceTotal(); // 🌟 تحديث المجموع بعد الإضافة
+
                 txtMaintDeviceID.setText("");
                 txtMaintCost.setText("");
                 txtMaintDesc.setText("");
@@ -606,8 +792,27 @@ public class SquadGameSystem extends JFrame {
             int selectedRow = tblMaintenance.getSelectedRow();
             if (selectedRow != -1) {
                 maintenanceModel.removeRow(selectedRow);
+                updateMaintenanceTotal(); // 🌟 تحديث المجموع بعد الحذف
             } else {
                 JOptionPane.showMessageDialog(this, "الرجاء تحديد سطر من جدول الصيانة لحذفه!", "تنبيه", JOptionPane.WARNING_MESSAGE);
+            }
+        });
+
+        // 🌟 برمجة زر الطباعة بحيث يطبع التقرير المالي بشكل احترافي
+        btnPrintMaintenance.addActionListener(e -> {
+            try {
+                // عنوان التقرير من الأعلى والمجموع من الأسفل
+                java.text.MessageFormat header = new java.text.MessageFormat("أرشيف الصيانة والمصروفات - صالة سكواد قيم");
+                java.text.MessageFormat footer = new java.text.MessageFormat("إجمالي التكلفة: " + lblTotalMaintenanceCost.getText().replace("الإجمالي: ", "") + " | الصفحة {0}");
+
+                boolean complete = tblMaintenance.print(JTable.PrintMode.FIT_WIDTH, header, footer);
+                if (complete) {
+                    JOptionPane.showMessageDialog(this, "تمت الطباعة بنجاح! ✅", "عملية ناجحة", JOptionPane.INFORMATION_MESSAGE);
+                } else {
+                    JOptionPane.showMessageDialog(this, "تم إلغاء الطباعة.", "إلغاء", JOptionPane.WARNING_MESSAGE);
+                }
+            } catch (Exception ex) {
+                JOptionPane.showMessageDialog(this, "حدث خطأ أثناء الطباعة: " + ex.getMessage(), "خطأ", JOptionPane.ERROR_MESSAGE);
             }
         });
 
@@ -616,22 +821,32 @@ public class SquadGameSystem extends JFrame {
         tabs.setFont(new Font("Arial", Font.BOLD, 13));
         tabs.setComponentOrientation(ComponentOrientation.RIGHT_TO_LEFT);
 
+        JPanel headerPanel = new JPanel(new BorderLayout());
+        headerPanel.setBackground(panelBlue);
+        headerPanel.setBorder(BorderFactory.createEmptyBorder(10, 15, 10, 15));
+
+        JLabel lblHeaderTitle = new JLabel("لوحة التحكم - صالة سكواد قيم");
+        lblHeaderTitle.setFont(new Font("Arial", Font.BOLD, 18));
+        lblHeaderTitle.setForeground(neonTitleColor);
+        headerPanel.add(lblHeaderTitle, BorderLayout.EAST);
+
+        styleButton(btnLogout, new Color(239, 68, 68));
+        btnLogout.addActionListener(e -> {
+            cardLayout.show(mainPanel, "Login");
+            txtLoginUser.setText("");
+            txtLoginPass.setText("");
+        });
+        headerPanel.add(btnLogout, BorderLayout.WEST);
+
+        dashboardContainer.add(headerPanel, BorderLayout.NORTH);
         dashboardContainer.add(tabs, BorderLayout.CENTER);
 
-        // الشريط العلوي لشريط تسجيل الخروج
-        JPanel topBar = new JPanel(new BorderLayout());
-        topBar.setBackground(bgBlue);
-        topBar.setBorder(BorderFactory.createEmptyBorder(8, 10, 8, 10));
-
-        btnLogout.setFont(new Font("Arial", Font.BOLD, 13));
-        btnLogout.setBackground(new Color(239, 68, 68));
-        btnLogout.setForeground(Color.WHITE);
-        btnLogout.setPreferredSize(new Dimension(140, 32));
-        btnLogout.setFocusPainted(false);
-        btnLogout.addActionListener(e -> cardLayout.show(mainPanel, "Login"));
-
-        topBar.add(btnLogout, BorderLayout.WEST);
-        dashboardContainer.add(topBar, BorderLayout.NORTH);
         mainPanel.add(dashboardContainer, "Dashboard");
+    }
+
+    public static void main(String[] args) {
+        SwingUtilities.invokeLater(() -> {
+            new SquadGameSystem().setVisible(true);
+        });
     }
 }
